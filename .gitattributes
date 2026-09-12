@@ -1,0 +1,14 @@
+# Normaliza los finales de línea automáticamente para archivos de texto
+* text=auto
+
+# Archivos de código y configuración: LF
+*.rs    text eol=lf
+*.toml  text eol=lf
+*.lock  text eol=lf
+*.md    text eol=lf
+
+# Archivos binarios (no tocar finales de línea)
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.exe   binary
