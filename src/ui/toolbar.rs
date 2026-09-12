@@ -16,6 +16,16 @@ pub fn show(app: &mut MdReaderApp, ui: &mut egui::Ui) {
                 app.open_dialog();
             }
 
+            // --- Recargar (solo si hay archivo abierto) ---
+            let has_file = app.current_file.is_some();
+            if ui
+                .add_enabled(has_file, egui::Button::new("🔄 Recargar"))
+                .on_hover_text("Recargar el archivo desde disco (F5)")
+                .clicked()
+            {
+                app.reload_current();
+            }
+
             ui.separator();
 
             // --- Nombre del archivo abierto ---

@@ -12,6 +12,7 @@ readme = "README.md"
 eframe = { version = "0.36", default-features = false, features = [
     "default_fonts",
     "glow",
+    "persistence",
 ] }
 egui = "0.36"
 # Cargadores de imágenes: SOLO locales (file/image/svg/gif/webp).
@@ -35,6 +36,8 @@ egui_commonmark = { version = "0.25", features = [
 rfd = "0.17"
 # Watcher del sistema de ficheros para el live reload
 notify = "8.2"
+# Serialización de las preferencias de UI (tema y zoom) para su persistencia
+serde = { version = "1", features = ["derive"] }
 # Carga de imágenes referenciadas en el Markdown
 image = { version = "0.25", default-features = false, features = [
     "png",
@@ -43,6 +46,10 @@ image = { version = "0.25", default-features = false, features = [
     "bmp",
     "webp",
 ] }
+
+# Dependencias de compilación: embeber el icono en el .exe (solo Windows)
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 # Perfil de release optimizado para tamaño y rendimiento del binario final
 [profile.release]

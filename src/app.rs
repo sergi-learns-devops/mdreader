@@ -3,14 +3,41 @@
 use crate::ui;
 use crate::watcher::FileWatcher;
 use egui_commonmark::CommonMarkCache;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Tema visual de la aplicación.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Theme {
     Light,
     Dark,
 }
+
+/// Preferencias de interfaz que se persisten entre sesiones.
+///
+/// Nota de privacidad: SOLO se guardan ajustes de UI no sensibles (tema y
+/// zoom). Nunca se persiste la ruta del archivo abierto ni su contenido.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct Preferences {
+    pub theme: Theme,
+    pub zoom: f32,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            theme: Theme::Light,
+            zoom: 1.0,
+        }
+    }
+}
+
+/// Clave con la que se almacenan las preferencias en el storage de eframe.
+const PREFS_KEY: &str = "mdreader_preferences";
+
+/// Tamaño máximo de archivo que se carga en memoria (25 MiB). Evita agotar
+/// la memoria al abrir accidentalmente un archivo enorme (DoS de memoria).
+const MAX_FILE_BYTES: u64 = 25 * 1024 * 1024;
 
 /// Estado global de la aplicación.
 pub struct MdReaderApp {
@@ -42,13 +69,20 @@ impl MdReaderApp {
         // renderizador de Markdown pueda mostrar imágenes locales.
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
+        // Restaura las preferencias de UI (tema y zoom) de la sesión anterior,
+        // si existen. Solo se recuperan ajustes no sensibles.
+        let prefs: Preferences = cc
+            .storage
+            .and_then(|s| eframe::get_value(s, PREFS_KEY))
+            .unwrap_or_default();
+
         let mut app = Self {
             current_file: None,
             content: String::new(),
             error: None,
             cache: CommonMarkCache::default(),
-            theme: Theme::Light,
-            zoom: 1.0,
+            theme: prefs.theme,
+            zoom: prefs.zoom.clamp(ZOOM_MIN, ZOOM_MAX),
             watcher: None,
         };
 
@@ -72,7 +106,31 @@ impl MdReaderApp {
 
     /// Carga un archivo desde disco en el estado de la aplicación y arranca
     /// el watcher para el live reload.
+    ///
+    /// Aplica un límite de tamaño para evitar agotar la memoria con archivos
+    /// enormes, y los mensajes de error muestran solo el nombre del archivo
+    /// (nunca la ruta absoluta) para no exponer la estructura de directorios.
     pub fn load_file(&mut self, path: PathBuf) {
+        let name = file_label(&path);
+
+        // Comprueba el tamaño antes de leer el contenido en memoria.
+        match std::fs::metadata(&path) {
+            Ok(meta) if meta.len() > MAX_FILE_BYTES => {
+                self.error = Some(format!(
+                    "«{}» es demasiado grande ({:.1} MB). Límite: {} MB.",
+                    name,
+                    meta.len() as f64 / (1024.0 * 1024.0),
+                    MAX_FILE_BYTES / (1024 * 1024)
+                ));
+                return;
+            }
+            Err(e) => {
+                self.error = Some(format!("No se pudo acceder a «{}»: {}", name, e));
+                return;
+            }
+            _ => {}
+        }
+
         match std::fs::read_to_string(&path) {
             Ok(text) => {
                 self.content = text;
@@ -82,18 +140,16 @@ impl MdReaderApp {
                 self.current_file = Some(path);
             }
             Err(e) => {
-                self.error = Some(format!("No se pudo abrir «{}»: {}", path.display(), e));
+                self.error = Some(format!("No se pudo abrir «{}»: {}", name, e));
             }
         }
     }
 
     /// Recarga el contenido del archivo actualmente abierto desde disco.
-    fn reload_current(&mut self) {
+    /// Se usa tanto para el live reload como para la recarga manual (F5).
+    pub fn reload_current(&mut self) {
         if let Some(path) = self.current_file.clone() {
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                self.content = text;
-                self.error = None;
-            }
+            self.load_file(path);
         }
     }
 
@@ -139,7 +195,7 @@ impl MdReaderApp {
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         // Extraemos las intenciones dentro del closure de input y actuamos fuera,
         // para no mantener prestado el contexto mientras mutamos el estado.
-        let (open, zoom_in, zoom_out, zoom_reset, toggle_theme) = ctx.input(|i| {
+        let (open, zoom_in, zoom_out, zoom_reset, toggle_theme, reload) = ctx.input(|i| {
             let cmd = i.modifiers.command;
             (
                 cmd && i.key_pressed(egui::Key::O),
@@ -147,6 +203,7 @@ impl MdReaderApp {
                 cmd && i.key_pressed(egui::Key::Minus),
                 cmd && i.key_pressed(egui::Key::Num0),
                 cmd && i.key_pressed(egui::Key::T),
+                i.key_pressed(egui::Key::F5),
             )
         });
 
@@ -164,6 +221,9 @@ impl MdReaderApp {
         }
         if toggle_theme {
             self.toggle_theme();
+        }
+        if reload {
+            self.reload_current();
         }
     }
 
@@ -206,4 +266,31 @@ impl eframe::App for MdReaderApp {
         // aunque no haya interacción del usuario.
         ctx.request_repaint_after(std::time::Duration::from_millis(300));
     }
+
+    /// Guarda las preferencias de UI (tema y zoom) al cerrar la aplicación
+    /// o periódicamente. Solo se persisten ajustes no sensibles: nunca la
+    /// ruta del archivo abierto ni su contenido.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let prefs = Preferences {
+            theme: self.theme,
+            zoom: self.zoom,
+        };
+        eframe::set_value(storage, PREFS_KEY, &prefs);
+    }
+
+    /// No persistimos la memoria interna de egui (geometría de ventanas,
+    /// posiciones de scroll, etc.). Solo guardamos nuestras preferencias
+    /// explícitas de tema y zoom, minimizando los datos escritos a disco.
+    fn persist_egui_memory(&self) -> bool {
+        false
+    }
+}
+
+/// Devuelve una etiqueta segura para mostrar en la interfaz: solo el nombre
+/// del archivo, nunca la ruta absoluta (evita exponer la estructura de
+/// directorios del usuario en mensajes de error o en la barra de título).
+fn file_label(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "archivo".to_owned())
 }
