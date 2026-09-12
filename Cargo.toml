@@ -1,0 +1,42 @@
+[package]
+name = "mdreader"
+version = "0.1.0"
+edition = "2021"
+description = "Lector ligero y nativo de archivos Markdown (README.md)"
+license = "MIT"
+repository = "https://github.com/Sergi/mdReader"
+readme = "README.md"
+
+[dependencies]
+# Framework GUI nativo (motor propio, sin WebView / sin Chromium)
+eframe = { version = "0.36", default-features = false, features = [
+    "default_fonts",
+    "glow",
+] }
+egui = "0.36"
+egui_extras = { version = "0.36", features = ["all_loaders"] }
+# Renderizador de CommonMark/GFM para egui, con resaltado de sintaxis e imágenes
+egui_commonmark = { version = "0.25", features = [
+    "better_syntax_highlighting",
+    "load-images",
+] }
+# Diálogo de apertura de archivos nativo multiplataforma
+rfd = "0.17"
+# Watcher del sistema de ficheros para el live reload
+notify = "8.2"
+# Carga de imágenes referenciadas en el Markdown
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "gif",
+    "bmp",
+    "webp",
+] }
+
+# Perfil de release optimizado para tamaño y rendimiento del binario final
+[profile.release]
+opt-level = "z"     # optimiza para el menor tamaño
+lto = true          # link-time optimization
+codegen-units = 1   # mejor optimización a costa de tiempo de compilación
+panic = "abort"     # elimina el código de desenrollado de panics
+strip = true        # elimina símbolos de depuración del binario
