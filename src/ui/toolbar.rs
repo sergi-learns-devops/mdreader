@@ -7,6 +7,20 @@ pub fn show(app: &mut MdReaderApp, ui: &mut egui::Ui) {
     egui::Panel::top("toolbar").show(ui, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
+            // --- Toggle de la tabla de contenidos ---
+            let has_headings = !app.headings.is_empty();
+            ui.add_enabled_ui(has_headings, |ui| {
+                if ui
+                    .selectable_label(app.show_toc, "☰")
+                    .on_hover_text("Mostrar/ocultar la tabla de contenidos (Ctrl+B)")
+                    .clicked()
+                {
+                    app.toggle_toc();
+                }
+            });
+
+            ui.separator();
+
             // --- Abrir archivo ---
             if ui
                 .button("📂 Abrir")

@@ -12,6 +12,7 @@ Construido en **Rust** con [`egui`](https://github.com/emilk/egui), usa su propi
   - Como argumento en la línea de comandos: `mdreader README.md`
 - 📝 **Renderizado de Markdown** (CommonMark / GFM): encabezados, listas, tablas, bloques de código con resaltado de sintaxis, citas, enlaces, imágenes locales y checkboxes de tareas (`- [x]`).
 - 🌗 **Tema claro / oscuro** conmutable (`Ctrl+T`).
+- 🗂 **Tabla de contenidos (TOC)** navegable en un panel lateral colapsable (`Ctrl+B`): haz clic en un encabezado para saltar a él.
 - 🔍 **Zoom de texto** ajustable (`Ctrl` `+` / `-`, restablecer con `Ctrl+0`).
 - 🔄 **Recarga en vivo** (live reload): el documento se actualiza automáticamente cuando el archivo cambia en disco. Recarga manual con `F5`.
 - 💾 **Preferencias persistentes**: el tema y el zoom se recuerdan entre sesiones (no se guarda ninguna ruta ni contenido de archivos).
@@ -23,6 +24,7 @@ Construido en **Rust** con [`egui`](https://github.com/emilk/egui), usa su propi
 |---------------------|------------|
 | Abrir archivo       | `Ctrl + O` |
 | Recargar archivo    | `F5`       |
+| Tabla de contenidos | `Ctrl + B` |
 | Aumentar zoom       | `Ctrl + +` |
 | Reducir zoom        | `Ctrl + -` |
 | Restablecer zoom    | `Ctrl + 0` |
@@ -62,9 +64,11 @@ cargo build --release
 src/
 ├── main.rs          Punto de entrada; configura la ventana, el icono y procesa el argumento CLI.
 ├── app.rs           Estado central y bucle principal (tema, zoom, live reload, drag&drop, atajos, persistencia).
+├── toc.rs           Extracción de encabezados y generación de anclas para la tabla de contenidos.
 ├── watcher.rs       Observador del sistema de ficheros (notify) para la recarga en vivo.
 └── ui/
-    ├── toolbar.rs   Barra superior: abrir, recargar, tema, zoom.
+    ├── toolbar.rs   Barra superior: abrir, recargar, TOC, tema, zoom.
+    ├── toc_panel.rs Panel lateral con la tabla de contenidos navegable.
     └── viewer.rs    Área de lectura: renderiza el Markdown en una columna centrada, con overlay de drag&drop.
 build.rs             Embebe el icono en el ejecutable de Windows.
 assets/
@@ -87,7 +91,7 @@ MVP funcional para **Windows**. El diseño es multiplataforma (Windows, Linux, m
 
 ## Hoja de ruta
 
-- [ ] Panel lateral con tabla de contenidos (TOC) navegable.
+- [x] Panel lateral con tabla de contenidos (TOC) navegable.
 - [ ] Búsqueda dentro del documento (`Ctrl+F`).
 - [ ] Explorador de archivos de la carpeta.
 - [ ] Compilación y empaquetado para Linux y macOS.

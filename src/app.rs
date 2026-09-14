@@ -21,6 +21,8 @@ pub enum Theme {
 pub struct Preferences {
     pub theme: Theme,
     pub zoom: f32,
+    #[serde(default)]
+    pub show_toc: bool,
 }
 
 impl Default for Preferences {
@@ -28,6 +30,7 @@ impl Default for Preferences {
         Self {
             theme: Theme::Light,
             zoom: 1.0,
+            show_toc: false,
         }
     }
 }
@@ -45,6 +48,13 @@ pub struct MdReaderApp {
     pub current_file: Option<PathBuf>,
     /// Contenido Markdown en crudo del archivo abierto.
     pub content: String,
+    /// Contenido Markdown con los `{#slug}` inyectados en los encabezados,
+    /// que es lo que se pasa al renderizador para permitir el scroll al TOC.
+    pub rendered_content: String,
+    /// Encabezados extraídos del documento para la tabla de contenidos.
+    pub headings: Vec<crate::toc::Heading>,
+    /// Si el panel lateral con la tabla de contenidos está visible.
+    pub show_toc: bool,
     /// Mensaje de error a mostrar (por ejemplo, si falla la lectura).
     pub error: Option<String>,
     /// Caché del renderizador CommonMark (imágenes, resaltado, etc.).
@@ -79,6 +89,9 @@ impl MdReaderApp {
         let mut app = Self {
             current_file: None,
             content: String::new(),
+            rendered_content: String::new(),
+            headings: Vec::new(),
+            show_toc: prefs.show_toc,
             error: None,
             cache: CommonMarkCache::default(),
             theme: prefs.theme,
@@ -133,8 +146,15 @@ impl MdReaderApp {
 
         match std::fs::read_to_string(&path) {
             Ok(text) => {
+                // Procesa el TOC: extrae los encabezados e inyecta los `{#slug}`
+                // para poder navegar hasta ellos desde el panel lateral.
+                let toc = crate::toc::process(&text);
                 self.content = text;
+                self.rendered_content = toc.rendered_markdown;
+                self.headings = toc.headings;
                 self.error = None;
+                // Invalida la caché de scroll del renderizador (el contenido cambió).
+                self.cache.clear_scrollable();
                 // Arranca (o reinicia) el observador de cambios sobre el archivo.
                 self.watcher = FileWatcher::new(&path).ok();
                 self.current_file = Some(path);
@@ -176,6 +196,17 @@ impl MdReaderApp {
         };
     }
 
+    /// Muestra u oculta el panel lateral de la tabla de contenidos.
+    pub fn toggle_toc(&mut self) {
+        self.show_toc = !self.show_toc;
+    }
+
+    /// Solicita al renderizador que haga scroll hasta el encabezado indicado
+    /// por su ancla (slug). El scroll se aplica en el siguiente repintado.
+    pub fn scroll_to_heading(&mut self, slug: &str) {
+        *self.cache.scroll_to_id_target_mut() = Some(slug.to_owned());
+    }
+
     /// Procesa los archivos soltados sobre la ventana (drag & drop).
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
         // Recogemos la ruta del primer archivo soltado (si lo hay) dentro del
@@ -195,17 +226,19 @@ impl MdReaderApp {
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         // Extraemos las intenciones dentro del closure de input y actuamos fuera,
         // para no mantener prestado el contexto mientras mutamos el estado.
-        let (open, zoom_in, zoom_out, zoom_reset, toggle_theme, reload) = ctx.input(|i| {
-            let cmd = i.modifiers.command;
-            (
-                cmd && i.key_pressed(egui::Key::O),
-                cmd && (i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals)),
-                cmd && i.key_pressed(egui::Key::Minus),
-                cmd && i.key_pressed(egui::Key::Num0),
-                cmd && i.key_pressed(egui::Key::T),
-                i.key_pressed(egui::Key::F5),
-            )
-        });
+        let (open, zoom_in, zoom_out, zoom_reset, toggle_theme, reload, toggle_toc) =
+            ctx.input(|i| {
+                let cmd = i.modifiers.command;
+                (
+                    cmd && i.key_pressed(egui::Key::O),
+                    cmd && (i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals)),
+                    cmd && i.key_pressed(egui::Key::Minus),
+                    cmd && i.key_pressed(egui::Key::Num0),
+                    cmd && i.key_pressed(egui::Key::T),
+                    i.key_pressed(egui::Key::F5),
+                    cmd && i.key_pressed(egui::Key::B),
+                )
+            });
 
         if open {
             self.open_dialog();
@@ -221,6 +254,9 @@ impl MdReaderApp {
         }
         if toggle_theme {
             self.toggle_theme();
+        }
+        if toggle_toc {
+            self.toggle_toc();
         }
         if reload {
             self.reload_current();
@@ -259,6 +295,11 @@ impl eframe::App for MdReaderApp {
         // Barra de herramientas superior.
         ui::toolbar::show(self, ui);
 
+        // Panel lateral con la tabla de contenidos (si está visible y hay
+        // encabezados). Se dibuja antes que el área central para que ocupe
+        // el lateral y el documento el espacio restante.
+        ui::toc_panel::show(self, ui);
+
         // Área principal de lectura.
         ui::viewer::show(self, ui);
 
@@ -274,6 +315,7 @@ impl eframe::App for MdReaderApp {
         let prefs = Preferences {
             theme: self.theme,
             zoom: self.zoom,
+            show_toc: self.show_toc,
         };
         eframe::set_value(storage, PREFS_KEY, &prefs);
     }

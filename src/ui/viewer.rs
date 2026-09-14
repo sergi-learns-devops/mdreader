@@ -33,7 +33,11 @@ pub fn show(app: &mut MdReaderApp, ui: &mut egui::Ui) {
                             ui.set_max_width(READING_WIDTH);
                             // CommonMarkViewer renderiza también los checkboxes GFM
                             // (`- [ ]` / `- [x]`) presentes en muchos README.
-                            CommonMarkViewer::new().show(ui, &mut app.cache, &app.content);
+                            // enable_scroll_to_heading permite que el TOC haga
+                            // scroll a los encabezados (que llevan `{#slug}`).
+                            CommonMarkViewer::new()
+                                .enable_scroll_to_heading(true)
+                                .show(ui, &mut app.cache, &app.rendered_content);
                         });
                     });
                 });
